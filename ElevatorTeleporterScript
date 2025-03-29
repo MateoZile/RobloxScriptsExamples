@@ -1,0 +1,135 @@
+-- ELEVATOR TELEPORTATION SCRIPT MADE BY zilem3
+
+
+local elevator = script.Parent.ElevatorCore
+local touchPart = script.Parent.TouchPart
+local playerCountLabel = touchPart.SurfaceGui.PlayerCount  -- GUI stuff for showing players
+local timeLeftLabel = touchPart.SurfaceGui.TimeLeft
+
+local maxPlayers = 6  -- Max peeps allowed in
+local playersInElevator = {}  -- Who's in there
+local countdownTime = 15  -- Seconds before we yeet
+local countdownActive = false  -- Is the timer going?
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
+local updateExitButtonEvent = ReplicatedStorage:WaitForChild("UpdateExitButton")  -- For exit button sync
+
+local destinationPlaceId = 1424126316  -- Where we're headed
+
+-- Updates the player count on the GUI
+local function updatePlayerCount()
+	playerCountLabel.Text = #playersInElevator .. "/" .. maxPlayers
+end
+
+-- Resets everything back to start
+local function resetElevator()
+	playersInElevator = {}
+	updatePlayerCount()
+	timeLeftLabel.Text = countdownTime  -- No tostring needed, Lua handles it
+	countdownActive = false
+end
+
+-- Quick check to make sure teleport stuff is legit
+local function validateTeleportParams(placeId, playerList)
+	if type(placeId) ~= "number" then error("Place ID’s gotta be a number, dude") end
+	if type(playerList) ~= "table" then error("Player list should be a table, what’s this?") end
+
+	for _, p in pairs(playerList) do
+		if not (typeof(p) == "Instance" and p:IsA("Player")) then
+			error("Found a weird thing in the player list, needs to be actual players")
+		end
+	end
+end
+
+-- Handles the teleport magic
+local function teleportPlayers()
+	if #playersInElevator == 0 then
+		resetElevator()
+		return  -- Nobody’s here, bail out
+	end
+
+	validateTeleportParams(destinationPlaceId, playersInElevator)
+
+	-- Debug print, cuz why not
+	for _, plr in pairs(playersInElevator) do
+		print("Teleporting " .. plr.Name)
+	end
+
+	local worked, oops = pcall(function()
+		local teleportResult = TeleportService:TeleportPartyAsync(destinationPlaceId, playersInElevator)
+		if not teleportResult then error("Teleport didn’t work, rip") end
+	end)
+
+	if not worked then
+		warn("Teleport failed, here’s why: " .. oops)
+	end
+
+	resetElevator()  -- Clean up after ourselves
+end
+
+-- Countdown to launch
+local function startCountdown()
+	countdownActive = true
+	local timeLeft = countdownTime
+
+	while timeLeft > 0 do
+		timeLeftLabel.Text = timeLeft
+		wait(1)
+		timeLeft = timeLeft - 1
+	end
+
+	timeLeftLabel.Text = "Here we gooo..."
+	wait(2)
+	teleportPlayers()
+end
+
+-- Kick someone out if they hit exit
+local function removePlayerFromElevator(player)
+	for i, p in pairs(playersInElevator) do
+		if p == player then
+			table.remove(playersInElevator, i)
+			updatePlayerCount()
+			player.Character:SetPrimaryPartCFrame(elevator.CFrame * CFrame.new(0, 0, 25))  -- Yeet ’em out
+			updateExitButtonEvent:FireClient(player, false)  -- Hide exit button
+			break
+		end
+	end
+end
+
+-- When someone touches the part
+local function onTouch(hit)
+	local player = game.Players:GetPlayerFromCharacter(hit.Parent)
+	if player then
+		-- Check if they’re already in
+		local alreadyIn = false
+		for _, p in pairs(playersInElevator) do
+			if p == player then alreadyIn = true break end
+		end
+
+		if not alreadyIn then
+			player.Character:SetPrimaryPartCFrame(elevator.CFrame * CFrame.new(0, 2, 0))  -- Pop ’em in
+			table.insert(playersInElevator, player)
+			updatePlayerCount()
+			updateExitButtonEvent:FireClient(player, true)  -- Show exit button
+
+			if not countdownActive then
+				startCountdown()  -- Start the clock
+			end
+		end
+	end
+end
+
+-- Exit button listener
+updateExitButtonEvent.OnServerEvent:Connect(function(player, action)
+	if action == "Exit" then
+		removePlayerFromElevator(player)
+	end
+end)
+
+-- Hook up the touch event
+touchPart.Touched:Connect(onTouch)
+
+-- Set up the GUI on start
+updatePlayerCount()
+timeLeftLabel.Text = countdownTime

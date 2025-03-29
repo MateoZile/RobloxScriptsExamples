@@ -1,0 +1,20 @@
+-- Elevator Teleporter CLIENT script
+
+
+local exitButton = script.Parent
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local updateExitButtonEvent = ReplicatedStorage:WaitForChild("UpdateExitButton")
+
+exitButton.Visible = false
+
+local function updateButtonVisibility(visible)
+	exitButton.Visible = visible
+end
+
+updateExitButtonEvent.OnClientEvent:Connect(function(visible)
+	updateButtonVisibility(visible)
+end)
+
+exitButton.MouseButton1Click:Connect(function()
+	updateExitButtonEvent:FireServer("Exit")
+end)
